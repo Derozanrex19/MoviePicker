@@ -12,6 +12,7 @@ export type Mood =
 export type TimePreference = "short" | "medium" | "long";
 export type EnergyLevel = "light" | "medium" | "heavy";
 export type PopularityPreference = "popular" | "hidden-gem" | "either";
+export type AwardsPreference = "any" | "major-awards";
 
 export interface Genre {
   id: number;
@@ -31,6 +32,7 @@ export interface UserPreferences {
   genre: number | null;
   popularity: PopularityPreference;
   region: string | null;
+  awards: AwardsPreference;
 }
 
 export interface Movie {

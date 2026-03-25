@@ -52,6 +52,15 @@ body {
   background: rgba(255, 255, 255, 0.25);
 }
 
+/* Dark select dropdown styling */
+select {
+  color-scheme: dark;
+}
+select option {
+  background: #14141C;
+  color: #F5F5F7;
+}
+
 /* Shimmer animation for loading states */
 @keyframes shimmer {
   0% { background-position: -200% 0; }

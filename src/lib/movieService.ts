@@ -57,14 +57,20 @@ function buildQueries(prefs: UserPreferences): DiscoverParams[] {
 
   // When a region is selected, lower vote thresholds so non-English cinema surfaces
   const isNonEnglish = languages.length > 0 && !languages.includes("en");
-  const baseVoteCount =
-    isNonEnglish ? 5
-    : prefs.popularity === "hidden-gem" ? 20
-    : prefs.popularity === "popular" ? 300
-    : 50;
-  const baseMinRating = isNonEnglish
-    ? Math.max(moodProfile.minVoteAverage - 1.5, 4.0)
-    : moodProfile.minVoteAverage;
+  const prestigeMode = prefs.awards === "major-awards";
+
+  const baseVoteCount = prestigeMode
+    ? (isNonEnglish ? 120 : 1500)
+    : isNonEnglish ? 5
+      : prefs.popularity === "hidden-gem" ? 20
+        : prefs.popularity === "popular" ? 300
+          : 50;
+
+  const baseMinRating = prestigeMode
+    ? (isNonEnglish ? 6.6 : 7.2)
+    : isNonEnglish
+      ? Math.max(moodProfile.minVoteAverage - 1.5, 4.0)
+      : moodProfile.minVoteAverage;
 
   const queries: DiscoverParams[] = [];
 
@@ -80,7 +86,8 @@ function buildQueries(prefs: UserPreferences): DiscoverParams[] {
   }
 
   // Query 1: mood genres, random sort, random decade
-  const sort1 = pickRandom(SORT_OPTIONS);
+  const prestigeSorts = ["vote_average.desc", "vote_count.desc", "revenue.desc"] as const;
+  const sort1 = prestigeMode ? pickRandom([...prestigeSorts]) : pickRandom(SORT_OPTIONS);
   const decade1 = pickRandom(DECADE_RANGES);
   addQuery({
     genreIds: moodGenres.slice(0, 2),
@@ -95,7 +102,9 @@ function buildQueries(prefs: UserPreferences): DiscoverParams[] {
   });
 
   // Query 2: different genre subset, different sort, different decade
-  const sort2 = pickRandom(SORT_OPTIONS.filter((s) => s !== sort1));
+  const sort2 = prestigeMode
+    ? pickRandom([...prestigeSorts].filter((s) => s !== sort1))
+    : pickRandom(SORT_OPTIONS.filter((s) => s !== sort1));
   const decade2 = pickRandom(DECADE_RANGES.filter((d) => d !== decade1));
   addQuery({
     genreIds: userGenre ? [userGenre] : [pickRandom(moodGenres)],
@@ -116,7 +125,7 @@ function buildQueries(prefs: UserPreferences): DiscoverParams[] {
     minVoteCount: Math.max(baseVoteCount - 5, 3),
     maxRuntime: timeRange.max,
     minRuntime: timeRange.min,
-    sortBy: pickRandom(SORT_OPTIONS),
+    sortBy: prestigeMode ? "vote_average.desc" : pickRandom(SORT_OPTIONS),
     page: randomPage(200),
   });
 
@@ -127,7 +136,7 @@ function buildQueries(prefs: UserPreferences): DiscoverParams[] {
     minVoteCount: isNonEnglish ? 3 : 10,
     maxRuntime: timeRange.max,
     minRuntime: timeRange.min,
-    sortBy: pickRandom(SORT_OPTIONS),
+    sortBy: prestigeMode ? "vote_count.desc" : pickRandom(SORT_OPTIONS),
     page: randomPage(300),
   });
 
@@ -136,10 +145,10 @@ function buildQueries(prefs: UserPreferences): DiscoverParams[] {
     genreIds: moodGenres.slice(0, 3),
     minVoteAverage: isNonEnglish ? 4.0 : 5.0,
     minVoteCount: baseVoteCount,
-    sortBy: "popularity.desc",
+    sortBy: prestigeMode ? "vote_average.desc" : "popularity.desc",
     maxRuntime: timeRange.max,
     minRuntime: timeRange.min,
-    releaseDateGte: "2020-01-01",
+    releaseDateGte: prestigeMode ? "1950-01-01" : "2020-01-01",
     page: randomPage(30),
   });
 
