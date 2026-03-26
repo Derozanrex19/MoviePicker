@@ -1,4 +1,4 @@
-import type { Movie, UserPreferences, ScoredMovie, TimePreference, Mood } from "../types";
+import type { Movie, UserPreferences, ScoredMovie, TimePreference, Mood, DecadePreference } from "../types";
 import { isApiAvailable, discoverMovies, getMovieDetails } from "./tmdb";
 import type { DiscoverParams } from "./tmdb";
 import { MOOD_MAP } from "../data/moodMap";
@@ -30,6 +30,21 @@ const DECADE_RANGES = [
   { gte: "1920-01-01", lte: "1969-12-31" },
 ];
 
+const DECADE_MAP: Record<DecadePreference, { gte: string; lte: string }> = {
+  "1910s": { gte: "1910-01-01", lte: "1919-12-31" },
+  "1920s": { gte: "1920-01-01", lte: "1929-12-31" },
+  "1930s": { gte: "1930-01-01", lte: "1939-12-31" },
+  "1940s": { gte: "1940-01-01", lte: "1949-12-31" },
+  "1950s": { gte: "1950-01-01", lte: "1959-12-31" },
+  "1960s": { gte: "1960-01-01", lte: "1969-12-31" },
+  "1970s": { gte: "1970-01-01", lte: "1979-12-31" },
+  "1980s": { gte: "1980-01-01", lte: "1989-12-31" },
+  "1990s": { gte: "1990-01-01", lte: "1999-12-31" },
+  "2000s": { gte: "2000-01-01", lte: "2009-12-31" },
+  "2010s": { gte: "2010-01-01", lte: "2019-12-31" },
+  "2020s": { gte: "2020-01-01", lte: "2029-12-31" },
+};
+
 const shownMovieIds = new Set<number>();
 const GEMINI_RERANK_MOODS: Set<Mood> = new Set([
   "romantic",
@@ -47,6 +62,34 @@ function randomPage(max: number): number {
   return Math.floor(Math.random() * Math.min(max, 500)) + 1;
 }
 
+function getSelectedDecadeRange(prefs: UserPreferences): { gte: string; lte: string } | null {
+  return prefs.decade ? DECADE_MAP[prefs.decade] : null;
+}
+
+function hasStrictFilters(prefs: UserPreferences): boolean {
+  return Boolean(prefs.genre || prefs.animeOnly || prefs.region || prefs.decade);
+}
+
+function movieMatchesStrictFilters(movie: Movie, prefs: UserPreferences): boolean {
+  if (prefs.genre && !movie.genre_ids.includes(prefs.genre)) {
+    return false;
+  }
+
+  if (prefs.animeOnly && !movie.genre_ids.includes(16)) {
+    return false;
+  }
+
+  const decade = getSelectedDecadeRange(prefs);
+  if (decade) {
+    const releaseDate = movie.release_date || "";
+    if (releaseDate < decade.gte || releaseDate > decade.lte) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 /**
  * Build diverse query variations to reach deep into TMDB's catalog.
  * Each query varies sort order, date range, genre combo, language, and page
@@ -58,11 +101,13 @@ function buildQueries(prefs: UserPreferences): DiscoverParams[] {
 
   const moodGenres = [...moodProfile.genres];
   const userGenre = prefs.genre;
+  const animeMode = prefs.animeOnly;
   const strictGenreMode = userGenre !== null;
+  const selectedDecade = getSelectedDecadeRange(prefs);
 
   // Resolve region to TMDB language codes
   const regionData = prefs.region ? getRegionById(prefs.region) : null;
-  const languages = regionData?.languages ?? [];
+  const languages = animeMode ? ["ja"] : regionData?.languages ?? [];
 
   // When a region is selected, lower vote thresholds so non-English cinema surfaces
   const isNonEnglish = languages.length > 0 && !languages.includes("en");
@@ -97,9 +142,9 @@ function buildQueries(prefs: UserPreferences): DiscoverParams[] {
   // Query 1: mood genres, random sort, random decade
   const prestigeSorts = ["vote_average.desc", "vote_count.desc", "revenue.desc"] as const;
   const sort1 = prestigeMode ? pickRandom([...prestigeSorts]) : pickRandom(SORT_OPTIONS);
-  const decade1 = pickRandom(DECADE_RANGES);
+  const decade1 = selectedDecade ?? pickRandom(DECADE_RANGES);
   addQuery({
-    genreIds: strictGenreMode ? [userGenre] : moodGenres.slice(0, 2),
+    genreIds: strictGenreMode ? [userGenre!] : animeMode ? [16] : moodGenres.slice(0, 2),
     minVoteAverage: strictGenreMode ? Math.max(baseMinRating, 6.0) : baseMinRating,
     minVoteCount: baseVoteCount,
     maxRuntime: timeRange.max,
@@ -114,9 +159,9 @@ function buildQueries(prefs: UserPreferences): DiscoverParams[] {
   const sort2 = prestigeMode
     ? pickRandom([...prestigeSorts].filter((s) => s !== sort1))
     : pickRandom(SORT_OPTIONS.filter((s) => s !== sort1));
-  const decade2 = pickRandom(DECADE_RANGES.filter((d) => d !== decade1));
+  const decade2 = selectedDecade ?? pickRandom(DECADE_RANGES.filter((d) => d !== decade1));
   addQuery({
-    genreIds: userGenre ? [userGenre] : [pickRandom(moodGenres)],
+    genreIds: userGenre ? [userGenre] : animeMode ? [16] : [pickRandom(moodGenres)],
     minVoteAverage: strictGenreMode ? Math.max(baseMinRating, 5.8) : Math.max(baseMinRating - 1, 4.0),
     minVoteCount: strictGenreMode ? Math.max(baseVoteCount, 80) : baseVoteCount,
     maxRuntime: timeRange.max,
@@ -129,35 +174,40 @@ function buildQueries(prefs: UserPreferences): DiscoverParams[] {
 
   // Query 3: broad — all mood genres OR'd, no date filter, deep random page
   addQuery({
-    genreIds: strictGenreMode ? [userGenre] : moodGenres,
+    genreIds: strictGenreMode ? [userGenre!] : animeMode ? [16] : moodGenres,
     minVoteAverage: baseMinRating,
     minVoteCount: strictGenreMode ? Math.max(baseVoteCount, 30) : Math.max(baseVoteCount - 5, 3),
     maxRuntime: timeRange.max,
     minRuntime: timeRange.min,
     sortBy: prestigeMode ? "vote_average.desc" : pickRandom(SORT_OPTIONS),
+    releaseDateGte: selectedDecade?.gte,
+    releaseDateLte: selectedDecade?.lte,
     page: randomPage(200),
   });
 
   // Query 4: low threshold, deep pages for obscure finds
   addQuery({
-    genreIds: userGenre ? [userGenre] : [pickRandom(moodGenres)],
+    genreIds: userGenre ? [userGenre] : animeMode ? [16] : [pickRandom(moodGenres)],
     minVoteAverage: strictGenreMode ? Math.max(baseMinRating, 5.5) : isNonEnglish ? 4.0 : 5.5,
     minVoteCount: strictGenreMode ? 25 : isNonEnglish ? 3 : 10,
     maxRuntime: timeRange.max,
     minRuntime: timeRange.min,
     sortBy: prestigeMode ? "vote_count.desc" : pickRandom(SORT_OPTIONS),
+    releaseDateGte: selectedDecade?.gte,
+    releaseDateLte: selectedDecade?.lte,
     page: randomPage(300),
   });
 
   // Query 5: popular recent movies
   addQuery({
-    genreIds: strictGenreMode ? [userGenre] : moodGenres.slice(0, 3),
+    genreIds: strictGenreMode ? [userGenre!] : animeMode ? [16] : moodGenres.slice(0, 3),
     minVoteAverage: isNonEnglish ? 4.0 : 5.0,
     minVoteCount: strictGenreMode ? Math.max(baseVoteCount, 50) : baseVoteCount,
     sortBy: prestigeMode ? "vote_average.desc" : "popularity.desc",
     maxRuntime: timeRange.max,
     minRuntime: timeRange.min,
-    releaseDateGte: prestigeMode ? "1950-01-01" : "2020-01-01",
+    releaseDateGte: selectedDecade ? selectedDecade.gte : prestigeMode ? "1950-01-01" : "2020-01-01",
+    releaseDateLte: selectedDecade ? selectedDecade.lte : undefined,
     page: randomPage(30),
   });
 
@@ -196,7 +246,7 @@ async function fetchFromAPI(prefs: UserPreferences): Promise<Movie[]> {
     if (seen.has(m.id)) return false;
     seen.add(m.id);
     return true;
-  });
+  }).filter((movie) => movieMatchesStrictFilters(movie, prefs));
 
   // Filter out previously shown movies
   const fresh = unique.filter((m) => !shownMovieIds.has(m.id));
@@ -231,12 +281,21 @@ function getFromFallback(): Movie[] {
 }
 
 function buildCandidatePool(movies: Movie[], prefs: UserPreferences): Movie[] {
-  if (!prefs.genre) return movies;
+  let pool = movies;
 
-  const genreMatches = movies.filter((movie) => movie.genre_ids.includes(prefs.genre!));
+  if (prefs.animeOnly) {
+    const animeMatches = pool.filter((movie) => movie.genre_ids.includes(16));
+    if (animeMatches.length >= 6) {
+      pool = animeMatches;
+    }
+  }
+
+  if (!prefs.genre) return pool;
+
+  const genreMatches = pool.filter((movie) => movie.genre_ids.includes(prefs.genre!));
 
   // If we have enough direct matches, keep the pool focused on the user's chosen genre.
-  return genreMatches.length >= 8 ? genreMatches : movies;
+  return genreMatches.length >= 8 ? genreMatches : pool;
 }
 
 function shouldUseGemini(prefs: UserPreferences): boolean {
@@ -289,18 +348,19 @@ export function clearHistory(): void {
 
 export async function getRecommendations(prefs: UserPreferences): Promise<ScoredMovie[]> {
   let movies: Movie[];
+  const strictFilters = hasStrictFilters(prefs);
 
   if (isApiAvailable()) {
     try {
       movies = await fetchFromAPI(prefs);
-      if (movies.length < 3) {
+      if (!strictFilters && movies.length < 3) {
         movies = [...movies, ...getFromFallback()];
       }
     } catch {
-      movies = getFromFallback();
+      movies = strictFilters ? [] : getFromFallback();
     }
   } else {
-    movies = getFromFallback();
+    movies = strictFilters ? [] : getFromFallback();
   }
 
   let picks = await finalizePicks(movies, prefs);

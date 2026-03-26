@@ -95,6 +95,8 @@ function buildPrompt(prefs: UserPreferences, candidates: Array<Movie | ScoredMov
     `- Popularity: ${getPopularityLabel(prefs.popularity)}`,
     `- Awards preference: ${prefs.awards}`,
     `- Required genre focus: ${genreName ?? "none"}`,
+    `- Anime only: ${prefs.animeOnly ? "yes" : "no"}`,
+    `- Preferred decade: ${prefs.decade ?? "any"}`,
     `- Regional preference: ${regionLabel ?? "none"}`,
     "",
     "Candidates:",

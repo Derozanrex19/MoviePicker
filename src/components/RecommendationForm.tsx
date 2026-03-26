@@ -80,6 +80,8 @@ const PRESETS: Preset[] = [
 
 const DEFAULT_FILTERS: FiltersState = {
   genre: null,
+  animeOnly: false,
+  decade: null,
   region: null,
   popularity: "either",
   awards: "any",
@@ -99,19 +101,21 @@ interface Props {
 
 export default function RecommendationForm({ onSubmit, loading }: Props) {
   const [mood, setMood] = useState<Mood | null>(null);
-  const [time, setTime] = useState<TimePreference>("medium");
-  const [energy, setEnergy] = useState<EnergyLevel>("medium");
+  const [time, setTime] = useState<TimePreference | null>(null);
+  const [energy, setEnergy] = useState<EnergyLevel | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<FiltersState>({ ...DEFAULT_FILTERS });
   const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
 
-  const canSubmit = mood !== null && !loading;
+  const canSubmit = mood !== null && time !== null && energy !== null && !loading;
 
   function handleSubmit() {
     if (!canSubmit) return;
     onSubmit({
       mood, time, energy,
       genre: filters.genre,
+      animeOnly: filters.animeOnly,
+      decade: filters.decade,
       popularity: filters.popularity,
       region: filters.region,
       awards: filters.awards,
@@ -127,7 +131,17 @@ export default function RecommendationForm({ onSubmit, loading }: Props) {
     setEnergy(re);
     setFilters({ ...DEFAULT_FILTERS });
     setStep(3);
-    onSubmit({ mood: rm, time: rt, energy: re, genre: null, region: null, popularity: "either", awards: "any" });
+    onSubmit({
+      mood: rm,
+      time: rt,
+      energy: re,
+      genre: null,
+      animeOnly: false,
+      decade: null,
+      region: null,
+      popularity: "either",
+      awards: "any",
+    });
   }
 
   function applyPreset(p: Preset) {
@@ -145,6 +159,8 @@ export default function RecommendationForm({ onSubmit, loading }: Props) {
   const activeFilterCount = useMemo(() => {
     let c = 0;
     if (filters.genre) c++;
+    if (filters.animeOnly) c++;
+    if (filters.decade) c++;
     if (filters.region) c++;
     if (filters.popularity !== "either") c++;
     if (filters.awards !== "any") c++;

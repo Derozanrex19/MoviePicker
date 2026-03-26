@@ -1,11 +1,13 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
-import type { AwardsPreference, PopularityPreference } from "../types";
+import type { AwardsPreference, DecadePreference, PopularityPreference } from "../types";
 import { TMDB_GENRES } from "../data/genres";
 import { REGIONS } from "../data/regions";
 
 export type FiltersState = {
   genre: number | null;
+  animeOnly: boolean;
+  decade: DecadePreference | null;
   region: string | null;
   popularity: PopularityPreference;
   awards: AwardsPreference;
@@ -20,6 +22,21 @@ interface Props {
 
 const selectClass =
   "w-full appearance-none rounded-xl border border-border bg-card px-4 py-3 text-sm text-text-primary outline-none transition-colors focus:border-accent-gold/40 hover:border-border-light";
+
+const DECADE_OPTIONS: DecadePreference[] = [
+  "1910s",
+  "1920s",
+  "1930s",
+  "1940s",
+  "1950s",
+  "1960s",
+  "1970s",
+  "1980s",
+  "1990s",
+  "2000s",
+  "2010s",
+  "2020s",
+];
 
 export default function FiltersModal({ open, onClose, value, onChange }: Props) {
   return (
@@ -66,7 +83,10 @@ export default function FiltersModal({ open, onClose, value, onChange }: Props) 
                   className={selectClass}
                   value={value.genre ?? ""}
                   onChange={(e) =>
-                    onChange({ ...value, genre: e.target.value ? Number(e.target.value) : null })
+                    onChange({
+                      ...value,
+                      genre: e.target.value ? Number(e.target.value) : null,
+                    })
                   }
                 >
                   <option value="">Any</option>
@@ -90,6 +110,66 @@ export default function FiltersModal({ open, onClose, value, onChange }: Props) 
                   <option value="">Any country</option>
                   {REGIONS.map((r) => (
                     <option key={r.id} value={r.id}>{r.label}</option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="space-y-2 sm:col-span-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
+                  Format
+                </span>
+                <label
+                  className={[
+                    "flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors",
+                    value.animeOnly
+                      ? "border-accent-gold/40 bg-accent-gold/8 text-text-primary"
+                      : "border-border bg-card text-text-secondary hover:border-border-light",
+                  ].join(" ")}
+                >
+                  <input
+                    type="checkbox"
+                    checked={value.animeOnly}
+                    onChange={(e) =>
+                      onChange({ ...value, animeOnly: e.target.checked })
+                    }
+                    className="sr-only"
+                  />
+                  <div>
+                    <p className="text-sm font-medium">Anime only</p>
+                    <p className="mt-1 text-xs text-text-secondary">
+                      Prefer Japanese animation and exclude live-action picks.
+                    </p>
+                  </div>
+                  <div
+                    className={[
+                      "relative h-6 w-11 rounded-full transition-colors",
+                      value.animeOnly ? "bg-accent-gold" : "bg-border",
+                    ].join(" ")}
+                  >
+                    <span
+                      className={[
+                        "absolute top-1 h-4 w-4 rounded-full bg-white transition-transform",
+                        value.animeOnly ? "translate-x-6" : "translate-x-1",
+                      ].join(" ")}
+                    />
+                  </div>
+                </label>
+              </div>
+
+              <label className="space-y-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
+                  Decade
+                </span>
+                <select
+                  className={selectClass}
+                  value={value.decade ?? ""}
+                  onChange={(e) =>
+                    onChange({ ...value, decade: (e.target.value || null) as DecadePreference | null })
+                  }
+                >
+                  <option value="">Any</option>
+                  {DECADE_OPTIONS.map((decade) => (
+                    <option key={decade} value={decade}>{decade}</option>
                   ))}
                 </select>
               </label>
@@ -133,7 +213,14 @@ export default function FiltersModal({ open, onClose, value, onChange }: Props) 
               <button
                 type="button"
                 onClick={() =>
-                  onChange({ genre: null, region: null, popularity: "either", awards: "any" })
+                  onChange({
+                    genre: null,
+                    animeOnly: false,
+                    decade: null,
+                    region: null,
+                    popularity: "either",
+                    awards: "any",
+                  })
                 }
                 className="text-sm font-medium text-text-secondary transition-colors hover:text-text-primary"
               >

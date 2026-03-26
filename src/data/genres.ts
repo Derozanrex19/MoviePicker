@@ -15,8 +15,8 @@ export const TMDB_GENRES: Genre[] = [
 ];
 
 export const GENRE_MAP: Record<number, string> = Object.fromEntries(
-  TMDB_GENRES.map((g) => [g.id, g.name])
-);
+  TMDB_GENRES.map((g) => [String(g.id), g.name])
+ ) as Record<number, string>;
 
 export function getGenreName(id: number): string {
   return GENRE_MAP[id] ?? "Unknown";

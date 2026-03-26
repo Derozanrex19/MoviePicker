@@ -13,6 +13,19 @@ export type TimePreference = "short" | "medium" | "long";
 export type EnergyLevel = "light" | "medium" | "heavy";
 export type PopularityPreference = "popular" | "hidden-gem" | "either";
 export type AwardsPreference = "any" | "major-awards";
+export type DecadePreference =
+  | "1910s"
+  | "1920s"
+  | "1930s"
+  | "1940s"
+  | "1950s"
+  | "1960s"
+  | "1970s"
+  | "1980s"
+  | "1990s"
+  | "2000s"
+  | "2010s"
+  | "2020s";
 
 export interface Genre {
   id: number;
@@ -30,6 +43,8 @@ export interface UserPreferences {
   time: TimePreference;
   energy: EnergyLevel;
   genre: number | null;
+  animeOnly: boolean;
+  decade: DecadePreference | null;
   popularity: PopularityPreference;
   region: string | null;
   awards: AwardsPreference;

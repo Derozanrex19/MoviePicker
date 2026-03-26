@@ -1,6 +1,6 @@
 import type { Movie, ScoredMovie, UserPreferences, TimePreference, EnergyLevel, PopularityPreference } from "../types";
 import { MOOD_MAP } from "../data/moodMap";
-import { getGenreNames } from "../data/genres";
+import { getGenreName, getGenreNames } from "../data/genres";
 import { getRegionById } from "../data/regions";
 
 const TIME_RANGES: Record<TimePreference, { min: number; max: number; label: string }> = {
@@ -26,6 +26,11 @@ function scoreGenreMatch(movieGenres: number[], moodGenres: number[], userGenre:
   }
 
   return score;
+}
+
+function scoreAnimeOnly(movieGenres: number[], animeOnly: boolean): number {
+  if (!animeOnly) return 1.0;
+  return movieGenres.includes(16) ? 1.0 : 0.0;
 }
 
 function scoreEnergy(voteAverage: number, runtime: number | null, energy: EnergyLevel): number {
@@ -68,14 +73,16 @@ export function scoreMovie(movie: Movie, prefs: UserPreferences): ScoredMovie {
 
   const weights = {
     genre: 30,
+    anime: 10,
     runtime: 25,
     energy: 15,
     popularity: 15,
-    quality: 15,
+    quality: 5,
   };
 
   const scores = {
     genre: scoreGenreMatch(movie.genre_ids, moodProfile.genres, prefs.genre),
+    anime: scoreAnimeOnly(movie.genre_ids, prefs.animeOnly),
     runtime: scoreRuntime(movie.runtime, prefs.time),
     energy: scoreEnergy(movie.vote_average, movie.runtime, prefs.energy),
     popularity: scorePopularity(movie, prefs.popularity),
@@ -85,6 +92,7 @@ export function scoreMovie(movie: Movie, prefs: UserPreferences): ScoredMovie {
   const totalWeight = Object.values(weights).reduce((a, b) => a + b, 0);
   const weightedScore =
     scores.genre * weights.genre +
+    scores.anime * weights.anime +
     scores.runtime * weights.runtime +
     scores.energy * weights.energy +
     scores.popularity * weights.popularity +
@@ -138,8 +146,12 @@ function buildMatchReason(
   }
 
   if (prefs.genre && movie.genre_ids.includes(prefs.genre)) {
-    const name = getGenreNames([prefs.genre])[0];
+    const name = getGenreName(prefs.genre);
     if (name) reasons.push(`Matches your ${name} preference`);
+  }
+
+  if (prefs.animeOnly && movie.genre_ids.includes(16)) {
+    reasons.push("Fits your anime-only pick");
   }
 
   if (prefs.region) {
