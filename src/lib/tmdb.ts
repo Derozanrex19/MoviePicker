@@ -104,3 +104,67 @@ interface TMDBMovieDetail extends Movie {
 export async function getMovieDetails(movieId: number): Promise<TMDBMovieDetail> {
   return tmdbFetch<TMDBMovieDetail>(`/movie/${movieId}`, { language: "en-US" });
 }
+
+export interface TMDBVideo {
+  id: string;
+  key: string;
+  name: string;
+  site: string;
+  type: string;
+  official: boolean;
+}
+
+export interface MovieDetailsWithVideos extends TMDBMovieDetail {
+  videos?: {
+    results: TMDBVideo[];
+  };
+}
+
+interface TMDBWatchProviderEntry {
+  provider_id: number;
+  provider_name: string;
+  logo_path: string | null;
+}
+
+interface TMDBWatchProviderRegion {
+  link?: string;
+  flatrate?: TMDBWatchProviderEntry[];
+  rent?: TMDBWatchProviderEntry[];
+  buy?: TMDBWatchProviderEntry[];
+}
+
+interface TMDBWatchProvidersResponse {
+  id: number;
+  results: Record<string, TMDBWatchProviderRegion>;
+}
+
+export interface MovieWatchProviders {
+  link: string | null;
+  flatrate: TMDBWatchProviderEntry[];
+  rent: TMDBWatchProviderEntry[];
+  buy: TMDBWatchProviderEntry[];
+}
+
+export async function getMovieDetailsWithVideos(movieId: number): Promise<MovieDetailsWithVideos> {
+  return tmdbFetch<MovieDetailsWithVideos>(`/movie/${movieId}`, {
+    language: "en-US",
+    append_to_response: "videos",
+  });
+}
+
+export async function getMovieWatchProviders(
+  movieId: number,
+  regionCode: string
+): Promise<MovieWatchProviders | null> {
+  const data = await tmdbFetch<TMDBWatchProvidersResponse>(`/movie/${movieId}/watch/providers`);
+  const region = data.results[regionCode.toUpperCase()];
+
+  if (!region) return null;
+
+  return {
+    link: region.link ?? null,
+    flatrate: region.flatrate ?? [],
+    rent: region.rent ?? [],
+    buy: region.buy ?? [],
+  };
+}

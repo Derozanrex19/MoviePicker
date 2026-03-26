@@ -1,10 +1,11 @@
-import type { Movie, UserPreferences, ScoredMovie, TimePreference } from "../types";
+import type { Movie, UserPreferences, ScoredMovie, TimePreference, Mood } from "../types";
 import { isApiAvailable, discoverMovies, getMovieDetails } from "./tmdb";
 import type { DiscoverParams } from "./tmdb";
 import { MOOD_MAP } from "../data/moodMap";
 import { FALLBACK_MOVIES } from "../data/fallbackMovies";
 import { getRegionById } from "../data/regions";
 import { rankMovies } from "./recommend";
+import { isGeminiAvailable, rerankMoviesWithGemini } from "./gemini";
 
 const TIME_RUNTIME_LIMITS: Record<TimePreference, { max: number; min: number }> = {
   short: { max: 100, min: 0 },
@@ -30,6 +31,13 @@ const DECADE_RANGES = [
 ];
 
 const shownMovieIds = new Set<number>();
+const GEMINI_RERANK_MOODS: Set<Mood> = new Set([
+  "romantic",
+  "emotional",
+  "mind-blowing",
+  "thought-provoking",
+  "dark",
+]);
 
 function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
@@ -50,6 +58,7 @@ function buildQueries(prefs: UserPreferences): DiscoverParams[] {
 
   const moodGenres = [...moodProfile.genres];
   const userGenre = prefs.genre;
+  const strictGenreMode = userGenre !== null;
 
   // Resolve region to TMDB language codes
   const regionData = prefs.region ? getRegionById(prefs.region) : null;
@@ -90,8 +99,8 @@ function buildQueries(prefs: UserPreferences): DiscoverParams[] {
   const sort1 = prestigeMode ? pickRandom([...prestigeSorts]) : pickRandom(SORT_OPTIONS);
   const decade1 = pickRandom(DECADE_RANGES);
   addQuery({
-    genreIds: moodGenres.slice(0, 2),
-    minVoteAverage: baseMinRating,
+    genreIds: strictGenreMode ? [userGenre] : moodGenres.slice(0, 2),
+    minVoteAverage: strictGenreMode ? Math.max(baseMinRating, 6.0) : baseMinRating,
     minVoteCount: baseVoteCount,
     maxRuntime: timeRange.max,
     minRuntime: timeRange.min,
@@ -108,8 +117,8 @@ function buildQueries(prefs: UserPreferences): DiscoverParams[] {
   const decade2 = pickRandom(DECADE_RANGES.filter((d) => d !== decade1));
   addQuery({
     genreIds: userGenre ? [userGenre] : [pickRandom(moodGenres)],
-    minVoteAverage: Math.max(baseMinRating - 1, 4.0),
-    minVoteCount: baseVoteCount,
+    minVoteAverage: strictGenreMode ? Math.max(baseMinRating, 5.8) : Math.max(baseMinRating - 1, 4.0),
+    minVoteCount: strictGenreMode ? Math.max(baseVoteCount, 80) : baseVoteCount,
     maxRuntime: timeRange.max,
     minRuntime: timeRange.min,
     sortBy: sort2,
@@ -120,9 +129,9 @@ function buildQueries(prefs: UserPreferences): DiscoverParams[] {
 
   // Query 3: broad — all mood genres OR'd, no date filter, deep random page
   addQuery({
-    genreIds: moodGenres,
+    genreIds: strictGenreMode ? [userGenre] : moodGenres,
     minVoteAverage: baseMinRating,
-    minVoteCount: Math.max(baseVoteCount - 5, 3),
+    minVoteCount: strictGenreMode ? Math.max(baseVoteCount, 30) : Math.max(baseVoteCount - 5, 3),
     maxRuntime: timeRange.max,
     minRuntime: timeRange.min,
     sortBy: prestigeMode ? "vote_average.desc" : pickRandom(SORT_OPTIONS),
@@ -132,8 +141,8 @@ function buildQueries(prefs: UserPreferences): DiscoverParams[] {
   // Query 4: low threshold, deep pages for obscure finds
   addQuery({
     genreIds: userGenre ? [userGenre] : [pickRandom(moodGenres)],
-    minVoteAverage: isNonEnglish ? 4.0 : 5.5,
-    minVoteCount: isNonEnglish ? 3 : 10,
+    minVoteAverage: strictGenreMode ? Math.max(baseMinRating, 5.5) : isNonEnglish ? 4.0 : 5.5,
+    minVoteCount: strictGenreMode ? 25 : isNonEnglish ? 3 : 10,
     maxRuntime: timeRange.max,
     minRuntime: timeRange.min,
     sortBy: prestigeMode ? "vote_count.desc" : pickRandom(SORT_OPTIONS),
@@ -142,9 +151,9 @@ function buildQueries(prefs: UserPreferences): DiscoverParams[] {
 
   // Query 5: popular recent movies
   addQuery({
-    genreIds: moodGenres.slice(0, 3),
+    genreIds: strictGenreMode ? [userGenre] : moodGenres.slice(0, 3),
     minVoteAverage: isNonEnglish ? 4.0 : 5.0,
-    minVoteCount: baseVoteCount,
+    minVoteCount: strictGenreMode ? Math.max(baseVoteCount, 50) : baseVoteCount,
     sortBy: prestigeMode ? "vote_average.desc" : "popularity.desc",
     maxRuntime: timeRange.max,
     minRuntime: timeRange.min,
@@ -221,6 +230,59 @@ function getFromFallback(): Movie[] {
   return fresh.length >= 3 ? fresh : shuffled;
 }
 
+function buildCandidatePool(movies: Movie[], prefs: UserPreferences): Movie[] {
+  if (!prefs.genre) return movies;
+
+  const genreMatches = movies.filter((movie) => movie.genre_ids.includes(prefs.genre!));
+
+  // If we have enough direct matches, keep the pool focused on the user's chosen genre.
+  return genreMatches.length >= 8 ? genreMatches : movies;
+}
+
+function shouldUseGemini(prefs: UserPreferences): boolean {
+  return GEMINI_RERANK_MOODS.has(prefs.mood);
+}
+
+async function finalizePicks(
+  movies: Movie[],
+  prefs: UserPreferences
+): Promise<ScoredMovie[]> {
+  const candidatePool = buildCandidatePool(movies, prefs);
+  const rankedCandidates = rankMovies(candidatePool, prefs, 6);
+
+  if (rankedCandidates.length <= 3) {
+    return rankedCandidates.slice(0, 3);
+  }
+
+  if (!isGeminiAvailable() || !shouldUseGemini(prefs)) {
+    return rankedCandidates.slice(0, 3);
+  }
+
+  try {
+    const aiPicks = await rerankMoviesWithGemini(prefs, rankedCandidates);
+    if (!aiPicks) {
+      return rankedCandidates.slice(0, 3);
+    }
+
+    const byId = new Map(rankedCandidates.map((movie) => [movie.id, movie]));
+
+    return aiPicks
+      .map((pick) => {
+        const movie = byId.get(pick.id);
+        if (!movie) return null;
+
+        return {
+          ...movie,
+          matchReason: pick.reason || movie.matchReason,
+        };
+      })
+      .filter((movie): movie is ScoredMovie => movie !== null)
+      .slice(0, 3);
+  } catch {
+    return rankedCandidates.slice(0, 3);
+  }
+}
+
 export function clearHistory(): void {
   shownMovieIds.clear();
 }
@@ -241,7 +303,7 @@ export async function getRecommendations(prefs: UserPreferences): Promise<Scored
     movies = getFromFallback();
   }
 
-  let picks = rankMovies(movies, prefs);
+  let picks = await finalizePicks(movies, prefs);
 
   // Enrich only the final 3 with runtime data
   picks = await enrichTopPicks(picks);

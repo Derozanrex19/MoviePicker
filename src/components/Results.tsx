@@ -7,9 +7,10 @@ interface Props {
   results: ScoredMovie[];
   onTryAgain: () => void;
   onAdjust: () => void;
+  onOpenDetails: (movie: ScoredMovie) => void;
 }
 
-export default function Results({ results, onTryAgain, onAdjust }: Props) {
+export default function Results({ results, onTryAgain, onAdjust, onOpenDetails }: Props) {
   return (
     <section className="relative mx-auto max-w-4xl px-5 py-12">
       {/* Glow backdrop */}
@@ -29,9 +30,14 @@ export default function Results({ results, onTryAgain, onAdjust }: Props) {
         </p>
       </motion.div>
 
-      <div className="relative space-y-6">
+      <div className="relative grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {results.map((movie, i) => (
-          <MovieCard key={movie.id} movie={movie} index={i} />
+          <MovieCard
+            key={movie.id}
+            movie={movie}
+            index={i}
+            onOpenDetails={onOpenDetails}
+          />
         ))}
       </div>
 

@@ -1,5 +1,5 @@
-import { useRef, useCallback } from "react";
-import type { UserPreferences } from "./types";
+import { useRef, useCallback, useState } from "react";
+import type { UserPreferences, ScoredMovie } from "./types";
 import { useRecommendations } from "./hooks/useRecommendations";
 import Navbar from "./components/Navbar";
 import Hero from "./components/Hero";
@@ -7,14 +7,14 @@ import RecommendationForm from "./components/RecommendationForm";
 import Results from "./components/Results";
 import LoadingState from "./components/LoadingState";
 import ErrorState from "./components/ErrorState";
-import HowItWorks from "./components/HowItWorks";
-import Features from "./components/Features";
 import Footer from "./components/Footer";
+import MovieDetailsModal from "./components/MovieDetailsModal";
 
 export default function App() {
   const { results, loading, error, generate, regenerate, reset } = useRecommendations();
   const formRef = useRef<HTMLDivElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
+  const [selectedMovie, setSelectedMovie] = useState<ScoredMovie | null>(null);
 
   const showResults = results.length > 0 && !loading;
   const showError = error !== null && !loading;
@@ -31,6 +31,7 @@ export default function App() {
   );
 
   const handleTryAgain = useCallback(async () => {
+    setSelectedMovie(null);
     await regenerate();
     setTimeout(() => {
       resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -39,10 +40,19 @@ export default function App() {
 
   const handleAdjust = useCallback(() => {
     reset();
+    setSelectedMovie(null);
     setTimeout(() => {
       formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 50);
   }, [reset]);
+
+  const handleOpenDetails = useCallback((movie: ScoredMovie) => {
+    setSelectedMovie(movie);
+  }, []);
+
+  const handleCloseDetails = useCallback(() => {
+    setSelectedMovie(null);
+  }, []);
 
   return (
     <div className="film-grain min-h-screen flex flex-col">
@@ -69,19 +79,19 @@ export default function App() {
               results={results}
               onTryAgain={handleTryAgain}
               onAdjust={handleAdjust}
+              onOpenDetails={handleOpenDetails}
             />
           )}
         </div>
-
-        {showForm && (
-          <>
-            <HowItWorks />
-            <Features />
-          </>
-        )}
       </main>
 
       <Footer />
+
+      <MovieDetailsModal
+        movie={selectedMovie}
+        open={selectedMovie !== null}
+        onClose={handleCloseDetails}
+      />
     </div>
   );
 }
